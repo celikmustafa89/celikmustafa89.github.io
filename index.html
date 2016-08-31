@@ -1,10 +1,55 @@
-<!DOCTYPE html>
-<html lang="en">
+﻿<!DOCTYPE html>
+<html>
 <head>
-    <meta charset="UTF-8">
-    <title>Mustafa ÇELİK Web Page</title>
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8">
+<title>HeroWP.com Countdown / Coming Soon Page</title>
+
+<!--CSS-->
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/bootstrap-light.css">
+<link href='http://fonts.googleapis.com/css?family=Oswald:400,300,700' rel='stylesheet' type='text/css'>
+<!--/CSS-->
+
+<!--JS-->
+<script src="http://ajax.googleapis.com/ajax/libs/jquery/1.11.0/jquery.min.js"></script>
+<script src="js/jquery.plugin.js"></script>
+<script src="js/jquery.countdown.js"></script>
+<script>
+$(function () {
+	$('#defaultCountdown').countdown({until: new Date(2016, 12, 25)});
+	//Replace above date with your own, to find out more visit http://keith-wood.name/countdown.html
+});
+</script>
+<!--/JS-->
+
 </head>
+
 <body>
-    Web Page is under construction !!!
+
+<!--DARK OVERLAY-->
+<div class="overlay"></div>
+<!--/DARK OVERLAY-->
+
+<!--WRAP-->
+<div id="wrap">
+	<!--CONTAINER-->
+	<div class="container">
+		<img src="images/paperplane.png" alt="Paper Plane" class="image-align" />
+		<h1>
+			<span>GitHub Page</span><br/>
+			is under <span class="yellow">Construction</span>
+		</h1>
+		<p>GitHub site is currently <strong>under construction...</strong> <br/></p>
+		<div id="defaultCountdown"></div>
+		<form action="#">
+			<input type="text" name="email" id="email" value="Subscribe to fond out when we are done">
+			<input type="submit" value="GO!">
+		</form>
+		<p class="copyright">Designed by <a href="https://herowp.com" target="_blank">Mustafa ÇELİK</a></p>
+	</div>
+	<!--/CONTAINER-->
+</div>
+<!--/WRAP-->
+
 </body>
 </html>
