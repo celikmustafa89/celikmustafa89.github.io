@@ -1,0 +1,417 @@
+#!/usr/bin/env python
+import os, glob
+import sys
+import argparse
+import logging
+import time
+import zipfile
+import yaml
+import shutil 
+
+# Use local default_data/default_themes for testing
+local_dir = os.path.realpath(os.path.dirname(__file__) + '../../../')
+sys.path.insert(0, local_dir)
+
+import pykwiki.core
+pyk_dir = os.path.dirname(os.path.realpath(pykwiki.core.__file__))
+
+conf = pykwiki.core.conf
+logger = conf.logger
+ctrl = pykwiki.core.ctrl
+
+def command_style(args):
+    """ Lists and installs styles """
+
+    args.style_name = args.style_name.lower()
+
+    if args.style_command == 'info':
+
+        # Display info for all themes
+        if args.style_name == 'all':
+            logger.info('='*40)
+            paths = get_style_paths()
+            for path in paths:
+                info_path = os.path.join(path, 'info.yaml')
+                if not os.path.exists(info_path):
+                    logger.warning("No info.yaml found at %s"%(info_path))
+                    continue
+                fh = open(info_path, 'r')
+                yml = fh.read()
+                fh.close()
+                info_data = yaml.load(yml)                
+                logger.info("%s v%s by %s", 
+                    info_data.get('name', 'Unnamed'), 
+                    info_data.get('version', '?'),
+                    info_data.get('author_name', 'Unknown'))
+                logger.info(info_data.get('description', 
+                    'No description available'))
+                logger.info("")
+            return
+    
+        # Display info for specified theme
+        logger.info('='*40)
+        style_dir = get_styles_dir()
+        info_path = os.path.join(style_dir, args.style_name, 'info.yaml')
+        if not os.path.exists(info_path):
+            raise Exception("Unknown style path: %s"%style_path)
+        fh = open(info_path, 'r')
+        yml = fh.read()
+        fh.close()
+        info_data = yaml.load(yml)
+        logger.info("Name: %s", info_data.get('name', 'Unnamed'))
+        logger.info("Version: %s", info_data.get('version', 'Unknown'))
+        logger.info("Author Name: %s", 
+            info_data.get('author_name', 'Unknown'))
+        logger.info("Author Email: %s", 
+            info_data.get('author_email', 'No author email'))
+        logger.info("Author Website: %s",
+            info_data.get('author_website', 'No author website'))
+        logger.info("Description: %s",
+            info_data.get('description', 'No description'))
+        logger.info("Long Description: %s",
+            info_data.get('long_description', 'No long description'))
+        logger.info("")
+        return
+
+    if args.style_command == 'install':
+        styles_dest = os.path.join(conf.base_path, 'styles')
+        if not os.path.exists(styles_dest):
+            raise Exception("Cannot locate style destination (%s)"%(styles_dest))
+        if args.style_name == 'all':
+            for style_dir in get_style_paths():
+                style_name = os.path.basename(style_dir)
+                style_dest = os.path.join(styles_dest, style_name)
+                install_style(style_dir, style_dest, args.force)
+            return
+
+        style_src = os.path.join(get_styles_dir(), args.style_name)
+        style_dest = os.path.join(styles_dest, args.style_name)
+        install_style(style_src, style_dest, args.force)
+        return
+
+    if args.style_command == 'enable':
+        if args.style_name == 'all':
+            logger.info("Please specify a style name to enable")
+            return False
+        style_dest = os.path.join(conf.base_path, 'styles', args.style_name)
+        if not os.path.exists(style_dest):
+            style_src = os.path.join(get_styles_dir(), args.style_name)
+            logger.warning("Style is not installed, attempting to install")
+            install_style(style_src, style_dest)
+
+        conf.style = args.style_name
+        conf.save()
+        logger.info("Style updated, re-caching site...")
+        ctrl.cache_posts(None, force=True)
+        ctrl.cache_theme()
+        return
+        
+
+
+def install_style(style_src, style_dest, force=False):
+    """ Installs a built-in style to a project directory """
+    style_name = os.path.basename(style_src)
+    info_src = get_yaml_data(os.path.join(style_src, 'info.yaml'))
+
+    if not os.path.exists(style_src):
+        raise Exception("Cannot find style information for %s!" % style_name)
+    
+    if os.path.exists(style_dest):
+        if not force:
+            info_dest = get_yaml_data(os.path.join(style_dest, 'info.yaml'))
+            if info_src.get('version') <= info_dest.get('version'):
+                logger.info("Already installed: %s", style_name)
+                return False
+        
+        logger.debug("Removing existing style: %s"%(style_dest))
+        shutil.rmtree(style_dest)
+
+    logger.info("Installing style: %s", style_name)
+    shutil.copytree(style_src, style_dest)
+    return True
+
+def get_yaml_data(yaml_path):
+    with open(yaml_path, 'r') as fh:
+        yml = fh.read()
+        fh.close()
+        info_data = yaml.load(yml)
+        return info_data
+
+def get_styles_dir():        
+    return os.path.join(pyk_dir, 'data', 'default_data', 'styles')
+
+def get_style_paths():
+    styles_dir = get_styles_dir()
+    style_paths = glob.glob(os.path.join(styles_dir, '*'))
+    return style_paths  
+
+def command_new(args):
+    """ Creates a new project in args.base_path """
+
+    logger.info('='*40)
+    path = args.base_path
+    new_path = os.path.join(path, args.project_name)
+    
+    # Ensure that the project doesn't already exist
+    if os.path.exists(new_path):
+        raise Exception('Project path: %s already exists!'%(new_path))
+
+    logger.info('Creating new project in %s'%(new_path))
+
+    data_dir = os.path.join(pyk_dir, 'data', 'default_data')
+    if not os.path.exists(data_dir):
+        raise Exception("Data dir: %s does not exist!"%(data_dir))
+
+    logger.info("Installing default files")
+    shutil.copytree(data_dir, new_path)
+    conf.base_path = new_path
+    conf.version = 2
+    conf.save()
+   
+    # Cache data
+    logger.info("Caching data")
+    conf.load(os.path.join(new_path, 'config.yaml'))
+    ctrl.cache_posts(None, force=True)
+    ctrl.cache_theme()
+    ctrl.cache_rss_feed()
+    ctrl.cache_uploads()
+    return True
+
+def command_upgrade(args):
+    """ Upgrades from Pykwiki 1x to 2x """
+    
+    logger.info("Upgrading to PyKwiki 2x")
+
+    if not os.path.exists(conf.base_path):
+        raise Exception("Cannot locate project path: %s"%(conf.base_path))
+
+    if conf.version and conf.version >= 2:
+        logger.warning("Configuration version is correct, not upgrading...")
+        return
+
+    conf.version = 2
+    conf.style = 'default'
+    conf.theme = None
+    conf.save()
+
+    themes_dir = os.path.join(conf.base_path, 'themes')
+    if os.path.exists(themes_dir):
+        logger.info("Moving themes directory to .old")
+        shutil.copytree(themes_dir, themes_dir+'.old')
+        shutil.rmtree(themes_dir)
+     
+    styles_dir = os.path.join(conf.base_path, 'styles')
+    if not os.path.exists(styles_dir):
+        logger.info("Creating styles directory")
+        os.makedirs(styles_dir) 
+
+    logger.info("Installing default style")
+    style_src = os.path.join(get_styles_dir(), 'default')
+    style_dest = os.path.join(styles_dir, 'default')    
+    install_style(style_src, style_dest, force=True)
+
+    logger.info("Upgrade complete!")
+
+def command_cache(args):
+    """ Handle the command line options for cache """
+
+    logger.info('='*40)
+    plist = None
+    if args.posts:
+        plist = args.posts
+
+    force = False
+    if args.force:
+        force = True
+
+    # Skip intensive processing if -q is specified
+    if args.quick:
+        logger.info('Doing quick caching (skipping search index)')
+        ctrl.cache_posts(plist, force=force)
+        return True
+
+    # Force re-cache if links.yaml is updated
+    if not os.path.exists(conf.link_json_path) \
+            or (os.path.getmtime(conf.link_path) \
+            > os.path.getmtime(conf.link_json_path)):
+        force = True
+    logger.info('Caching source posts')
+    num_cached = ctrl.cache_posts(plist, force=force)
+    logger.info('='*40)
+    if num_cached > 0:
+        ctrl.cache_theme()
+    else: 
+        logger.info('No posts modified, not caching theme')
+
+    logger.info('='*40)
+    ctrl.cache_uploads() 
+    logger.info('='*40)
+    ctrl.cache_rss_feed()
+    command_index(args) 
+    return True
+
+def command_index(args):
+    """ Rebuild the search index """
+
+    logger.info('='*40)
+    ctrl.index_posts()
+    return True
+
+def load_config(args, check=True):
+    """ Attempt to read config.yaml if present in args.base_path """
+
+    cpath = os.path.join(args.base_path, 'config.yaml')
+
+    if args.config_file:
+        cpath = args.config_file
+    else:
+        conf.base_path = args.base_path
+
+    if not os.path.exists(cpath):
+        logger.warning("Config file not found, using defaults")
+        return False
+
+    try:
+        conf.load(cpath)
+        if check:
+            conf.check()
+    except:
+        logger.warning('Could not load %s, '\
+            'using default settings'%(cpath))
+        return False
+    return True
+
+if __name__ == "__main__":
+    stime = time.time()
+
+    # --------------------------------------------------------------------------
+    # Setup the argument parser
+    # --------------------------------------------------------------------------
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-b', '--base-path',
+        help='the base directory to operate on, defaults to current directory',
+        default=os.getcwd())
+    parser.add_argument('-c', '--config-file',
+        help='full path to configuration YAML file to load') 
+    parser.add_argument('-v', '--verbose', action='store_true',
+        help='output debug messages')
+    
+    subparsers = parser.add_subparsers(dest='command')
+
+    # --------------------------------------------------------------------------
+    # New subgroup
+    # --------------------------------------------------------------------------
+    parser_new = subparsers.add_parser('new',
+        help='create a new project')
+    parser_new.add_argument('project_name', 
+        help='the name of the project')
+    
+    # --------------------------------------------------------------------------
+    # Upgrade subgroup
+    # --------------------------------------------------------------------------
+    parser_upgrade = subparsers.add_parser('upgrade',
+        help='upgrade a project from 1.x to 2.x')    
+
+    # --------------------------------------------------------------------------
+    # Search index subgroup
+    # --------------------------------------------------------------------------
+    parser_index = subparsers.add_parser('index', 
+        help='build the search index')
+
+    # --------------------------------------------------------------------------
+    # Cache subgroup
+    # --------------------------------------------------------------------------
+    parser_cache = subparsers.add_parser('cache',
+        help='cache and index posts')
+    parser_cache.add_argument('-p', '--posts', nargs='+', type=str,
+        help='a list of source posts to cache, like post1.md post2.md ...')
+    parser_cache.add_argument('-f', '--force', action='store_true',
+        help='force cache even if file has not been modified')
+    parser_cache.add_argument('-q', '--quick', action='store_true',
+        help='Skip theme files, pagelist, and search index')
+
+    
+    # --------------------------------------------------------------------------
+    # Info subgroup
+    # --------------------------------------------------------------------------
+    parser_info = subparsers.add_parser('info', 
+        help='display PyKwiki information')
+    parser_info.add_argument('-v', '--version', action='store_true',
+        help='display PyKwiki version and exit')
+    parser_info.add_argument('-l', '--license', action='store_true',
+        help='display license information')
+
+
+    # --------------------------------------------------------------------------
+    # Style subgroup
+    # --------------------------------------------------------------------------
+    parser_style = subparsers.add_parser('style',
+        help='display style information')
+    parser_style.add_argument('style_command', choices=['info','install','enable'])
+    parser_style.add_argument('style_name', nargs='?', default='all', 
+        help='name of the available style to install or update')
+    parser_style.add_argument('-f', '--force', action='store_true',
+        help='overwrite existing styles if installing')
+
+    # Setup args
+    args = parser.parse_args()
+
+    if args.verbose:
+        logger.info("Setting logging level to DEBUG")
+        logger.setLevel(logging.DEBUG)
+    else:
+        logger.setLevel(logging.INFO)
+
+    # --------------------------------------------------------------------------
+    # Create new project
+    # --------------------------------------------------------------------------
+    if args.command == 'new':
+        command_new(args)
+
+    # --------------------------------------------------------------------------
+    # Upgrade project
+    # --------------------------------------------------------------------------
+    elif args.command == 'upgrade':
+        load_config(args, check=False)
+        command_upgrade(args)
+
+    # --------------------------------------------------------------------------
+    # Index posts
+    # --------------------------------------------------------------------------
+    elif args.command == 'index':
+        load_config(args)
+        command_index(args)
+
+    # --------------------------------------------------------------------------
+    # Cache posts        
+    # --------------------------------------------------------------------------
+    elif args.command == 'cache':
+        load_config(args)
+        command_cache(args)
+
+
+    # --------------------------------------------------------------------------
+    # Display info and exit
+    # --------------------------------------------------------------------------
+    elif args.command == 'info':
+        import pykwiki
+        if args.version:
+            print('PyKwiki version: %s'%(pykwiki.__version__))
+            sys.exit(0)
+        print('Installed in %s'%(pyk_dir))
+        print('Version: %s'%(pykwiki.__version__))
+        if args.license:
+            print('License: %s'%(pykwiki.__license__))
+        sys.exit(0)
+
+    # --------------------------------------------------------------------------
+    # Do stuff with styles
+    # --------------------------------------------------------------------------
+    elif args.command == 'style':
+        load_config(args)
+        command_style(args)
+
+    taken = time.time() - stime
+    logger.info("")
+    logger.debug('='*40)
+    logger.debug('Operations completed in %ss'%(taken)) 
